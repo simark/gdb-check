@@ -76,7 +76,19 @@ def compare_results(before, after):
 
 
 def main():
-    argparser = argparse.ArgumentParser()
+    epilog = '\n'.join((
+        'The script won\'t like if you try to pass something like:',
+        '',
+        '    --runtest-flags --directory=gdb.python',
+        '',
+        'Instead, use an equal sign:',
+        '',
+        '    --runtest-flags=--directory=gdb.python',
+    ))
+
+    argparser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog)
     argparser.add_argument('baseline-commit')
     argparser.add_argument('commit-to-test')
     argparser.add_argument('-j',
