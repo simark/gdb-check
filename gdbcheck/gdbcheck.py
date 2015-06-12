@@ -80,14 +80,15 @@ def main():
     argparser.add_argument('baseline-commit')
     argparser.add_argument('commit-to-test')
     argparser.add_argument('-j',
-                           help='-j value to pass to make when building.',
+                           help='-j value to pass to make when building',
                            default=1,
-                           type=int)
+                           type=int,
+                           metavar='jobs')
     argparser.add_argument('-d', '--dry-run',
-                           help='Dry run.',
+                           help='dry run',
                            action='store_true')
     argparser.add_argument('-r', '--runtest-flags',
-                           help='Value of RUNTESTFLAGS to pass to make check.',
+                           help='value of RUNTESTFLAGS to pass to make check',
                            default='')
     args = vars(argparser.parse_args())
 
