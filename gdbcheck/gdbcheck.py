@@ -79,11 +79,11 @@ def main():
     epilog = '\n'.join((
         'The script won\'t like if you try to pass something like:',
         '',
-        '    --runtest-flags --directory=gdb.python',
+        '    --runtestflags --directory=gdb.python',
         '',
         'Instead, use an equal sign:',
         '',
-        '    --runtest-flags=--directory=gdb.python',
+        '    --runtestflags=--directory=gdb.python',
     ))
 
     argparser = argparse.ArgumentParser(
@@ -99,7 +99,7 @@ def main():
     argparser.add_argument('-d', '--dry-run',
                            help='dry run',
                            action='store_true')
-    argparser.add_argument('-r', '--runtest-flags',
+    argparser.add_argument('-r', '--runtestflags',
                            help='value of RUNTESTFLAGS to pass to make check',
                            default='')
     args = vars(argparser.parse_args())
@@ -107,7 +107,7 @@ def main():
     commit1 = args['baseline-commit']
     commit2 = args['commit-to-test']
     dryrun = args['dry_run']
-    runtest_flags = args['runtest_flags']
+    runtest_flags = args['runtestflags']
     j = args['j']
 
     try:
