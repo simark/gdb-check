@@ -2,6 +2,7 @@
 
 import argparse
 from termcolor import cprint
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -37,16 +38,17 @@ def make(j, dry_run):
     execute(['make', '-C..', '-j', str(j)], dry_run)
 
 
-def make_check(dry_run):
-    execute(['make', 'check', 'RUNTESTFLAGS=--directory=gdb.python'], dry_run,
-            False)
+def make_check(runtest_flags, dry_run):
+    runtest_flags = shlex.quote(runtest_flags)
+    runtest_flags = 'RUNTESTFLAGS={}'.format(runtest_flags)
+    execute(['make', 'check', runtest_flags], dry_run, False)
 
 
 def copy(source, dest, dry_run):
     execute(['cp', source, dest], dry_run)
 
 
-def test_commit(commit, j, temp_dir, run_name, dry_run):
+def test_commit(commit, j, temp_dir, run_name, runtest_flags, dry_run):
     cprint('>>> Checking out {}'.format(commit), 'grey', 'on_white')
     checkout(commit, dry_run)
 
@@ -54,7 +56,7 @@ def test_commit(commit, j, temp_dir, run_name, dry_run):
     make(j, dry_run)
 
     cprint('>>> Make checking', 'grey', 'on_white')
-    make_check(dry_run)
+    make_check(runtest_flags, dry_run)
 
     cprint('>>> Copying results', 'grey', 'on_white')
     copy('testsuite/gdb.sum',
@@ -84,10 +86,16 @@ def main():
     argparser.add_argument('-d', '--dry-run',
                            help='Dry run.',
                            action='store_true')
+    argparser.add_argument('-r', '--runtest-flags',
+                           help='Value of RUNTESTFLAGS to pass to make check.',
+                           default='')
     args = vars(argparser.parse_args())
 
     commit1 = args['baseline-commit']
     commit2 = args['commit-to-test']
+    dryrun = args['dry_run']
+    runtest_flags = args['runtest_flags']
+    j = args['j']
 
     try:
         commit1 = resolve_to_sha1(commit1)
@@ -98,15 +106,15 @@ def main():
     print('A: {}  {}  '.format(commit1[:8], get_commit_summary(commit1)))
     print('B: {}  {}  '.format(commit2[:8], get_commit_summary(commit2)))
 
-    # Give the user time to check if it makes sense.
-    if not args['d']:
+    if not dryrun:
+        # Give the user time to check if it makes sense.
         time.sleep(2)
         temp_dir = tempfile.mkdtemp(prefix='gdb-check')
     else:
         temp_dir = '<temp_dir>'
 
-    test_commit(commit1, args['j'], temp_dir, 'before', args['d'])
-    test_commit(commit2, args['j'], temp_dir, 'after', args['d'])
+    test_commit(commit1, j, temp_dir, 'before', runtest_flags, dryrun)
+    test_commit(commit2, j, temp_dir, 'after', runtest_flags, dryrun)
 
     compare_results('{}/gdb.sum.before'.format(temp_dir),
                     '{}/gdb.sum.after'.format(temp_dir))
