@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='GDB check script',
-    version='1.0.1',
+    version='1.0.2',
     packages=['gdbcheck'],
     entry_points={
         'console_scripts': [
