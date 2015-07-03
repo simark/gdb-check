@@ -39,7 +39,8 @@ def make(j, dry_run):
 
 
 def make_check(runtest_flags, dry_run):
-    runtest_flags = shlex.quote(runtest_flags)
+    if len(runtest_flags) > 0:
+        runtest_flags = shlex.quote(runtest_flags)
     runtest_flags = 'RUNTESTFLAGS={}'.format(runtest_flags)
     execute(['make', 'check', runtest_flags], dry_run, False)
 
