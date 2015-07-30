@@ -35,7 +35,7 @@ def get_commit_summary(commit):
 
 
 def make(j, dry_run):
-    execute(['make', '-C..', '-j', str(j)], dry_run)
+    execute(['make', 'MAKEINFO=true', '-C..', '-j', str(j)], dry_run)
 
 
 def make_check(runtest_flags, dry_run):
