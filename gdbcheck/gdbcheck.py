@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
-from termcolor import cprint
+import os.path
 import shlex
 import subprocess
 import sys
 import tempfile
+from termcolor import cprint
 import time
 
 
@@ -19,51 +20,57 @@ def execute(cmd, dry_run, check=True):
         print(' '.join(cmd))
 
 
-def checkout(commit, dry_run):
-    execute(['git', 'checkout', commit], dry_run)
+def checkout(repo_path, commit, dry_run):
+    execute(['git', '-C', repo_path, 'checkout', commit], dry_run)
 
 
-def resolve_to_sha1(commit):
-    return subprocess.check_output(['git', 'rev-parse', commit],
-                                   universal_newlines=True).strip()
-
-
-def get_commit_summary(commit):
+def resolve_to_sha1(repo_path, commit):
     return subprocess.check_output(
-        ['git', 'log', '--format=%aN  %s', '-n', '1', commit],
+        ['git', '-C', repo_path, 'rev-parse', commit],
         universal_newlines=True).strip()
 
 
-def make(j, dry_run):
-    execute(['make', 'MAKEINFO=true', '-C..', '-j', str(j)], dry_run)
+def get_commit_summary(repo_path, commit):
+    return subprocess.check_output(
+        ['git', '-C', repo_path, 'log', '--format=%aN  %s', '-n', '1', commit],
+        universal_newlines=True).strip()
 
 
-def make_check(runtest_flags, dry_run):
+def make(build_path, j, dry_run):
+    execute(['make', '-C', build_path, 'MAKEINFO=true', '-j', str(j)],
+            dry_run)
+
+
+def make_check(build_path, runtest_flags, dry_run):
+    p = os.path.join(build_path, 'gdb')
+
     if len(runtest_flags) > 0:
         runtest_flags = shlex.quote(runtest_flags)
     runtest_flags = 'RUNTESTFLAGS={}'.format(runtest_flags)
-    execute(['make', 'check', runtest_flags], dry_run, False)
+
+    execute(['make', '-C', p, 'check', runtest_flags], dry_run, False)
 
 
 def copy(source, dest, dry_run):
     execute(['cp', source, dest], dry_run)
 
 
-def test_commit(commit, j, temp_dir, run_name, runtest_flags, dry_run):
+def test_commit(repo_path, build_path, commit, j, temp_dir, run_name,
+                runtest_flags, dry_run):
     cprint('>>> Checking out {}'.format(commit), 'grey', 'on_white')
-    checkout(commit, dry_run)
+    checkout(repo_path, commit, dry_run)
 
     cprint('>>> Making', 'grey', 'on_white')
-    make(j, dry_run)
+    make(build_path, j, dry_run)
 
     cprint('>>> Make checking', 'grey', 'on_white')
-    make_check(runtest_flags, dry_run)
+    make_check(build_path, runtest_flags, dry_run)
 
     cprint('>>> Copying results', 'grey', 'on_white')
-    copy('testsuite/gdb.sum',
-         '{}/gdb.sum.{}'. format(temp_dir, run_name), dry_run)
-    copy('testsuite/gdb.log',
-         '{}/gdb.log.{}'. format(temp_dir, run_name), dry_run)
+    sum_file = os.path.join(build_path, 'gdb', 'testsuite', 'gdb.sum')
+    copy(sum_file, '{}/gdb.sum.{}'. format(temp_dir, run_name), dry_run)
+    log_file = os.path.join(build_path, 'gdb', 'testsuite', 'gdb.log')
+    copy(log_file, '{}/gdb.log.{}'. format(temp_dir, run_name), dry_run)
 
 
 def compare_results(before, after):
@@ -93,16 +100,26 @@ def main():
     argparser.add_argument('baseline-commit')
     argparser.add_argument('commit-to-test')
     argparser.add_argument('-j',
-                           help='-j value to pass to make when building',
+                           help='-j value to pass to make when building '
+                           '(def: 1)',
                            default=1,
                            type=int,
                            metavar='jobs')
     argparser.add_argument('-d', '--dry-run',
-                           help='dry run',
+                           help='execute a dry run',
                            action='store_true')
     argparser.add_argument('-r', '--runtestflags',
-                           help='value of RUNTESTFLAGS to pass to make check',
+                           help='value of RUNTESTFLAGS to pass to make check '
+                           '(def: empty)',
                            default='')
+    argparser.add_argument('-s', '--source',
+                           help='path to binutils-gdb source repository '
+                           '(def: CWD)',
+                           default=os.getcwd())
+    argparser.add_argument('-b', '--build',
+                           help='path to binutils-gdb build directory '
+                           '(def: CWD)',
+                           default=os.getcwd())
     args = vars(argparser.parse_args())
 
     commit1 = args['baseline-commit']
@@ -110,15 +127,19 @@ def main():
     dryrun = args['dry_run']
     runtest_flags = args['runtestflags']
     j = args['j']
+    repo_path = args['source']
+    build_path = args['build']
 
     try:
-        commit1 = resolve_to_sha1(commit1)
-        commit2 = resolve_to_sha1(commit2)
+        commit1 = resolve_to_sha1(repo_path, commit1)
+        commit2 = resolve_to_sha1(repo_path, commit2)
     except subprocess.CalledProcessError:
         sys.exit(1)
 
-    print('A: {}  {}  '.format(commit1[:8], get_commit_summary(commit1)))
-    print('B: {}  {}  '.format(commit2[:8], get_commit_summary(commit2)))
+    print('A: {}  {}  '.format(
+        commit1[:8], get_commit_summary(repo_path, commit1)))
+    print('B: {}  {}  '.format(
+        commit2[:8], get_commit_summary(repo_path, commit2)))
 
     if not dryrun:
         # Give the user time to check if it makes sense.
@@ -127,8 +148,10 @@ def main():
     else:
         temp_dir = '<temp_dir>'
 
-    test_commit(commit1, j, temp_dir, 'before', runtest_flags, dryrun)
-    test_commit(commit2, j, temp_dir, 'after', runtest_flags, dryrun)
+    test_commit(repo_path, build_path, commit1, j, temp_dir, 'before',
+                runtest_flags, dryrun)
+    test_commit(repo_path, build_path, commit2, j, temp_dir, 'after',
+                runtest_flags, dryrun)
 
     compare_results('{}/gdb.sum.before'.format(temp_dir),
                     '{}/gdb.sum.after'.format(temp_dir))
