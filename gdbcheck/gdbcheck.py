@@ -11,14 +11,15 @@ import time
 
 
 def execute(cmd, dry_run, check=True):
+    line = ' '.join(cmd)
+
+    print(line)
+
     if not dry_run:
         if check:
-            subprocess.check_call(cmd)
+            subprocess.check_call(line, shell=True)
         else:
-            subprocess.call(cmd)
-    else:
-        print(' '.join(cmd))
-
+            subprocess.call(line, shell=True)
 
 def checkout(repo_path, commit, dry_run):
     execute(['git', '-C', repo_path, 'checkout', commit], dry_run)
