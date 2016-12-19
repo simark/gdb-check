@@ -98,8 +98,8 @@ def main():
     argparser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog)
-    argparser.add_argument('baseline-commit')
-    argparser.add_argument('commit-to-test')
+    argparser.add_argument('before-ref')
+    argparser.add_argument('after-ref')
     argparser.add_argument('-j',
                            help='-j value to pass to make when building '
                            '(def: 1)',
@@ -113,6 +113,14 @@ def main():
                            help='value of RUNTESTFLAGS to pass to make check '
                            '(def: empty)',
                            default='')
+    argparser.add_argument('--runtestflags-before',
+                           help='value of RUNTESTFLAGS to pass to make check '
+                           'when testing the \'before\' commit (def: empty)',
+                           default='')
+    argparser.add_argument('--runtestflags-after',
+                           help='value of RUNTESTFLAGS to pass to make check '
+                           'when testing the \'after\' commit (def: empty)',
+                           default='')
     argparser.add_argument('-s', '--source',
                            help='path to binutils-gdb source repository '
                            '(def: CWD)',
@@ -123,24 +131,25 @@ def main():
                            default=os.getcwd())
     args = vars(argparser.parse_args())
 
-    commit1 = args['baseline-commit']
-    commit2 = args['commit-to-test']
+    before_ref = args['before-ref']
+    after_ref = args['after-ref']
     dryrun = args['dry_run']
-    runtest_flags = args['runtestflags']
+    runtest_flags_before = ' '.join([args['runtestflags_before'], args['runtestflags']])
+    runtest_flags_after = ' '.join([args['runtestflags_after'], args['runtestflags']])
     j = args['j']
     repo_path = args['source']
     build_path = args['build']
 
     try:
-        commit1 = resolve_to_sha1(repo_path, commit1)
-        commit2 = resolve_to_sha1(repo_path, commit2)
+        before_sha1 = resolve_to_sha1(repo_path, before_ref)
+        after_sha1 = resolve_to_sha1(repo_path, after_ref)
     except subprocess.CalledProcessError:
         sys.exit(1)
 
-    print('A: {}  {}  '.format(
-        commit1[:8], get_commit_summary(repo_path, commit1)))
-    print('B: {}  {}  '.format(
-        commit2[:8], get_commit_summary(repo_path, commit2)))
+    print('Before: {}  {}  '.format(
+        before_sha1[:8], get_commit_summary(repo_path, before_sha1)))
+    print('After:  {}  {}  '.format(
+        after_sha1[:8], get_commit_summary(repo_path, after_sha1)))
 
     if not dryrun:
         # Give the user time to check if it makes sense.
@@ -149,10 +158,10 @@ def main():
     else:
         temp_dir = '<temp_dir>'
 
-    test_commit(repo_path, build_path, commit1, j, temp_dir, 'before',
-                runtest_flags, dryrun)
-    test_commit(repo_path, build_path, commit2, j, temp_dir, 'after',
-                runtest_flags, dryrun)
+    test_commit(repo_path, build_path, before_sha1, j, temp_dir, 'before',
+                runtest_flags_before, dryrun)
+    test_commit(repo_path, build_path, after_sha1, j, temp_dir, 'after',
+                runtest_flags_after, dryrun)
 
     compare_results('{}/gdb.sum.before'.format(temp_dir),
                     '{}/gdb.sum.after'.format(temp_dir))
