@@ -12,5 +12,5 @@ If you don't specify the source (-s) or build (-b) directories, the current work
 
 You can pass standard arguments in `RUNTESTFLAGS` using `-r`/`--runtestflags`:
 
-    $ gdb-check -j 4 -r=--directory=gdb.python master feature_branch
+    $ gdb-check -r=--directory=gdb.python master feature_branch
     
