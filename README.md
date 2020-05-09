@@ -16,3 +16,8 @@ working directory will be used instead.
 You can pass standard arguments in `RUNTESTFLAGS` using `-r`/`--runtestflags`:
 
     $ gdb-check -r=--directory=gdb.python master feature_branch
+
+You can pass a list of tests to execute (glob-style) through the `TESTS`
+variable using `-t`/`--tests`:
+
+    $ gdb-check -t 'gdb.base/foo-*.exp gdb.base/break.exp'
