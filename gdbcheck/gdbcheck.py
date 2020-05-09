@@ -42,14 +42,19 @@ def make(build_path, j, dry_run):
             dry_run)
 
 
-def make_check(build_path, runtest_flags, dry_run):
+def make_check(build_path, runtest_flags, tests, dry_run):
     p = os.path.join(build_path, 'gdb')
 
     if len(runtest_flags) > 0:
         runtest_flags = shlex.quote(runtest_flags)
     runtest_flags = 'RUNTESTFLAGS={}'.format(runtest_flags)
 
-    execute(['make', '-C', p, 'check', runtest_flags], dry_run, False)
+    cmd = ['make', '-C', p, 'check', runtest_flags]
+
+    if len(tests) > 0:
+        cmd.append('TESTS="{}"'.format(tests))
+
+    execute(cmd, dry_run, False)
 
 
 def copy(source, dest, dry_run):
@@ -57,7 +62,7 @@ def copy(source, dest, dry_run):
 
 
 def test_commit(repo_path, build_path, commit, j, temp_dir, run_name,
-                runtest_flags, dry_run):
+                runtest_flags, tests, dry_run):
     cprint('>>> Checking out {}'.format(commit), 'grey', 'on_white')
     checkout(repo_path, commit, dry_run)
 
@@ -65,7 +70,7 @@ def test_commit(repo_path, build_path, commit, j, temp_dir, run_name,
     make(build_path, j, dry_run)
 
     cprint('>>> Make checking', 'grey', 'on_white')
-    make_check(build_path, runtest_flags, dry_run)
+    make_check(build_path, runtest_flags, tests, dry_run)
 
     cprint('>>> Copying results', 'grey', 'on_white')
     sum_file = os.path.join(build_path, 'gdb', 'testsuite', 'gdb.sum')
@@ -121,6 +126,10 @@ def main():
                            help='value of RUNTESTFLAGS to pass to make check '
                            'when testing the \'after\' commit (def: empty)',
                            default='')
+    argparser.add_argument('-t', '--tests',
+                           help='value of TESTS to pass to make check '
+                           '(def: empty)',
+                           default='')
     argparser.add_argument('-s', '--source',
                            help='path to binutils-gdb source repository '
                            '(def: CWD)',
@@ -136,6 +145,7 @@ def main():
     dryrun = args['dry_run']
     runtest_flags_before = ' '.join([args['runtestflags_before'], args['runtestflags']])
     runtest_flags_after = ' '.join([args['runtestflags_after'], args['runtestflags']])
+    tests = args['tests']
     j = args['j']
     repo_path = args['source']
     build_path = args['build']
@@ -159,9 +169,9 @@ def main():
         temp_dir = '<temp_dir>'
 
     test_commit(repo_path, build_path, before_sha1, j, temp_dir, 'before',
-                runtest_flags_before, dryrun)
+                runtest_flags_before, tests, dryrun)
     test_commit(repo_path, build_path, after_sha1, j, temp_dir, 'after',
-                runtest_flags_after, dryrun)
+                runtest_flags_after, tests, dryrun)
 
     compare_results('{}/gdb.sum.before'.format(temp_dir),
                     '{}/gdb.sum.after'.format(temp_dir))
