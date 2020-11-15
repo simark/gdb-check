@@ -62,23 +62,21 @@ def copy(source, dest, dry_run):
     execute(["cp", source, dest], dry_run)
 
 
-def test_commit(
-    repo_path, build_path, commit, j, temp_dir, run_name, runtest_flags, tests, dry_run
-):
-    cprint(">>> Checking out {}".format(commit), "grey", "on_white")
-    checkout(repo_path, commit, dry_run)
+def test_spec(spec, dry_run):
+    cprint(">>> Checking out {}".format(spec.short_sha1), "grey", "on_white")
+    checkout(spec.src_path, spec.sha1, dry_run)
 
     cprint(">>> Making", "grey", "on_white")
-    make(build_path, j, dry_run)
+    make(spec.build_path, spec.j, dry_run)
 
     cprint(">>> Make checking", "grey", "on_white")
-    make_check(build_path, runtest_flags, tests, dry_run)
+    make_check(spec.build_path, spec.runtest_flags, spec.tests, dry_run)
 
     cprint(">>> Copying results", "grey", "on_white")
-    sum_file = os.path.join(build_path, "gdb", "testsuite", "gdb.sum")
-    copy(sum_file, "{}/gdb.sum.{}".format(temp_dir, run_name), dry_run)
-    log_file = os.path.join(build_path, "gdb", "testsuite", "gdb.log")
-    copy(log_file, "{}/gdb.log.{}".format(temp_dir, run_name), dry_run)
+    sum_file = os.path.join(spec.build_path, "gdb", "testsuite", "gdb.sum")
+    copy(sum_file, "{}/gdb.sum.{}".format(spec.results_path, spec.short_sha1), dry_run)
+    log_file = os.path.join(spec.build_path, "gdb", "testsuite", "gdb.log")
+    copy(log_file, "{}/gdb.log.{}".format(spec.results_path, spec.short_sha1), dry_run)
 
 
 def compare_results(before, after):
@@ -88,6 +86,51 @@ def compare_results(before, after):
     print("  meld {} {}".format(before, after))
     print("  kdiff3 {} {}".format(before, after))
     print("  diff -u {} {}".format(before, after))
+
+
+class BuildAndTestSpec:
+    def __init__(
+        self, src_path, build_path, results_path, sha1, j, runtest_flags, tests
+    ):
+        self._src_path = src_path
+        self._build_path = build_path
+        self._results_path = results_path
+        self._sha1 = sha1
+        self._j = j
+        self._runtest_flags = runtest_flags
+        self._tests = tests
+
+    @property
+    def src_path(self):
+        return self._src_path
+
+    @property
+    def build_path(self):
+        return self._build_path
+
+    @property
+    def results_path(self):
+        return self._results_path
+
+    @property
+    def sha1(self):
+        return self._sha1
+
+    @property
+    def short_sha1(self):
+        return self.sha1[:12]
+
+    @property
+    def j(self):
+        return self._j
+
+    @property
+    def runtest_flags(self):
+        return self._runtest_flags
+
+    @property
+    def tests(self):
+        return self._tests
 
 
 def main():
@@ -154,67 +197,60 @@ def main():
         help="path to binutils-gdb build directory " "(def: CWD)",
         default=os.getcwd(),
     )
-    args = vars(argparser.parse_args())
 
+    args = vars(argparser.parse_args())
+    dryrun = args["dry_run"]
+
+    if not dryrun:
+        # Give the user time to check if it makes sense.
+        results_path = tempfile.mkdtemp(prefix="gdb-check")
+    else:
+        results_path = "<temp_dir>"
+
+    src_path = args["source"]
+    build_path = args["build"]
     before_ref = args["before-ref"]
     after_ref = args["after-ref"]
-    dryrun = args["dry_run"]
+    j = args["j"]
     runtest_flags_before = " ".join([args["runtestflags_before"], args["runtestflags"]])
     runtest_flags_after = " ".join([args["runtestflags_after"], args["runtestflags"]])
     tests = args["tests"]
-    j = args["j"]
-    repo_path = args["source"]
-    build_path = args["build"]
 
     try:
-        before_sha1 = resolve_to_sha1(repo_path, before_ref)
-        after_sha1 = resolve_to_sha1(repo_path, after_ref)
+        before_sha1 = resolve_to_sha1(src_path, before_ref)
+        after_sha1 = resolve_to_sha1(src_path, after_ref)
     except subprocess.CalledProcessError:
         sys.exit(1)
 
+    before_spec = BuildAndTestSpec(
+        src_path, build_path, results_path, before_sha1, j, runtest_flags_before, tests
+    )
+    after_spec = BuildAndTestSpec(
+        src_path, build_path, results_path, after_sha1, j, runtest_flags_after, tests
+    )
+
     print(
         "Before: {}  {}  ".format(
-            before_sha1[:8], get_commit_summary(repo_path, before_sha1)
+            before_spec.short_sha1, get_commit_summary(src_path, before_spec.sha1)
         )
     )
     print(
         "After:  {}  {}  ".format(
-            after_sha1[:8], get_commit_summary(repo_path, after_sha1)
+            after_spec.short_sha1, get_commit_summary(src_path, after_spec.sha1)
         )
     )
 
     if not dryrun:
         # Give the user time to check if it makes sense.
         time.sleep(2)
-        temp_dir = tempfile.mkdtemp(prefix="gdb-check")
-    else:
-        temp_dir = "<temp_dir>"
 
-    test_commit(
-        repo_path,
-        build_path,
-        before_sha1,
-        j,
-        temp_dir,
-        "before",
-        runtest_flags_before,
-        tests,
-        dryrun,
-    )
-    test_commit(
-        repo_path,
-        build_path,
-        after_sha1,
-        j,
-        temp_dir,
-        "after",
-        runtest_flags_after,
-        tests,
-        dryrun,
-    )
+    specs_to_test = [before_spec, after_spec]
+    for spec in specs_to_test:
+        test_spec(spec, dryrun)
 
     compare_results(
-        "{}/gdb.sum.before".format(temp_dir), "{}/gdb.sum.after".format(temp_dir)
+        "{}/gdb.sum.{}".format(results_path, before_spec.short_sha1),
+        "{}/gdb.sum.{}".format(results_path, after_spec.short_sha1),
     )
 
 
