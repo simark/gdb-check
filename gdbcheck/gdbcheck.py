@@ -39,6 +39,24 @@ def get_commit_summary(repo_path, commit):
     ).strip()
 
 
+def get_rev_list(repo_path, before, after):
+    return (
+        subprocess.check_output(
+            [
+                "git",
+                "-C",
+                repo_path,
+                "rev-list",
+                "--reverse",
+                "{}^..{}".format(before, after),
+            ],
+            universal_newlines=True,
+        )
+        .strip()
+        .split("\n")
+    )
+
+
 def make(build_path, j, dry_run):
     execute(["make", "-C", build_path, "MAKEINFO=true", "-j", str(j)], dry_run)
 
@@ -62,7 +80,7 @@ def copy(source, dest, dry_run):
     execute(["cp", source, dest], dry_run)
 
 
-def test_spec(spec, dry_run):
+def test_spec(spec, suffix, dry_run):
     cprint(">>> Checking out {}".format(spec.short_sha1), "grey", "on_white")
     checkout(spec.src_path, spec.sha1, dry_run)
 
@@ -74,15 +92,12 @@ def test_spec(spec, dry_run):
 
     cprint(">>> Copying results", "grey", "on_white")
     sum_file = os.path.join(spec.build_path, "gdb", "testsuite", "gdb.sum")
-    copy(sum_file, "{}/gdb.sum.{}".format(spec.results_path, spec.short_sha1), dry_run)
+    copy(sum_file, "{}/gdb.sum.{}".format(spec.results_path, suffix), dry_run)
     log_file = os.path.join(spec.build_path, "gdb", "testsuite", "gdb.log")
-    copy(log_file, "{}/gdb.log.{}".format(spec.results_path, spec.short_sha1), dry_run)
+    copy(log_file, "{}/gdb.log.{}".format(spec.results_path, suffix), dry_run)
 
 
 def compare_results(before, after):
-    print()
-    print("You can run one of these commands to view differences in test " "results.")
-    print()
     print("  meld {} {}".format(before, after))
     print("  kdiff3 {} {}".format(before, after))
     print("  diff -u {} {}".format(before, after))
@@ -197,6 +212,12 @@ def main():
         help="path to binutils-gdb build directory " "(def: CWD)",
         default=os.getcwd(),
     )
+    argparser.add_argument(
+        "-a",
+        "--all-commits",
+        help="test all commits between 'before' and 'after'",
+        action="store_true",
+    )
 
     args = vars(argparser.parse_args())
     dryrun = args["dry_run"]
@@ -212,9 +233,11 @@ def main():
     before_ref = args["before-ref"]
     after_ref = args["after-ref"]
     j = args["j"]
-    runtest_flags_before = " ".join([args["runtestflags_before"], args["runtestflags"]])
-    runtest_flags_after = " ".join([args["runtestflags_after"], args["runtestflags"]])
+    runtest_flags = args["runtestflags"]
+    runtest_flags_before = " ".join([args["runtestflags_before"], runtest_flags])
+    runtest_flags_after = " ".join([args["runtestflags_after"], runtest_flags])
     tests = args["tests"]
+    all_commits = args["all_commits"]
 
     try:
         before_sha1 = resolve_to_sha1(src_path, before_ref)
@@ -222,35 +245,90 @@ def main():
     except subprocess.CalledProcessError:
         sys.exit(1)
 
-    before_spec = BuildAndTestSpec(
-        src_path, build_path, results_path, before_sha1, j, runtest_flags_before, tests
-    )
-    after_spec = BuildAndTestSpec(
-        src_path, build_path, results_path, after_sha1, j, runtest_flags_after, tests
-    )
+    rev_list = get_rev_list(src_path, before_sha1, after_sha1)
+    specs_to_test = []
 
-    print(
-        "Before: {}  {}  ".format(
-            before_spec.short_sha1, get_commit_summary(src_path, before_spec.sha1)
+    if all_commits:
+        for sha1 in rev_list:
+            spec = BuildAndTestSpec(
+                src_path, build_path, results_path, sha1, j, runtest_flags, tests
+            )
+            specs_to_test.append(spec)
+
+        print("Test all commits between:")
+        print(
+            "  {}  {}".format(
+                specs_to_test[0].short_sha1,
+                get_commit_summary(src_path, specs_to_test[0].sha1),
+            )
         )
-    )
-    print(
-        "After:  {}  {}  ".format(
-            after_spec.short_sha1, get_commit_summary(src_path, after_spec.sha1)
+        print(
+            "  {}  {}".format(
+                specs_to_test[-1].short_sha1,
+                get_commit_summary(src_path, specs_to_test[-1].sha1),
+            )
         )
-    )
+    else:
+        before_spec = BuildAndTestSpec(
+            src_path,
+            build_path,
+            results_path,
+            before_sha1,
+            j,
+            runtest_flags_before,
+            tests,
+        )
+        specs_to_test.append(before_spec)
+
+        after_spec = BuildAndTestSpec(
+            src_path,
+            build_path,
+            results_path,
+            after_sha1,
+            j,
+            runtest_flags_after,
+            tests,
+        )
+        specs_to_test.append(after_spec)
+
+        print(
+            "Before: {}  {}".format(
+                before_spec.short_sha1, get_commit_summary(src_path, before_spec.sha1)
+            )
+        )
+        print(
+            "After:  {}  {}".format(
+                after_spec.short_sha1, get_commit_summary(src_path, after_spec.sha1)
+            )
+        )
 
     if not dryrun:
         # Give the user time to check if it makes sense.
         time.sleep(2)
 
-    specs_to_test = [before_spec, after_spec]
-    for spec in specs_to_test:
-        test_spec(spec, dryrun)
+    for i, spec in enumerate(specs_to_test):
+        test_spec(spec, "{:02}-{}".format(i, spec.short_sha1), dryrun)
 
+    print("You can run one of these commands to view differences in test results.")
+    print()
+
+    if len(specs_to_test) > 2:
+        print("Incremental results:")
+        print()
+        for i, (a, b) in enumerate(zip(specs_to_test[:-1], specs_to_test[1:])):
+            compare_results(
+                "{}/gdb.sum.{:02}-{}".format(results_path, i, a.short_sha1),
+                "{}/gdb.sum.{:02}-{}".format(results_path, i + 1, b.short_sha1),
+            )
+            print()
+
+    print("Results between before and after:")
+    print()
     compare_results(
-        "{}/gdb.sum.{}".format(results_path, before_spec.short_sha1),
-        "{}/gdb.sum.{}".format(results_path, after_spec.short_sha1),
+        "{}/gdb.sum.{:02}-{}".format(results_path, 0, specs_to_test[0].short_sha1),
+        "{}/gdb.sum.{:02}-{}".format(
+            results_path, len(specs_to_test) - 1, specs_to_test[-1].short_sha1
+        ),
     )
 
 
