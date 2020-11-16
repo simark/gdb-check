@@ -61,14 +61,14 @@ def make(build_path, j, dry_run):
     execute(["make", "-C", build_path, "MAKEINFO=true", "-j", str(j)], dry_run)
 
 
-def make_check(build_path, runtest_flags, tests, dry_run):
+def make_check(build_path, runtest_flags, tests, j, dry_run):
     p = os.path.join(build_path, "gdb")
 
     if len(runtest_flags) > 0:
         runtest_flags = shlex.quote(runtest_flags)
     runtest_flags = "RUNTESTFLAGS={}".format(runtest_flags)
 
-    cmd = ["make", "-C", p, "check", runtest_flags]
+    cmd = ["make", "-C", p, "check-parallel", "-j", str(j), runtest_flags]
 
     if len(tests) > 0:
         cmd.append('TESTS="{}"'.format(tests))
@@ -88,7 +88,7 @@ def test_spec(spec, suffix, dry_run):
     make(spec.build_path, spec.j, dry_run)
 
     cprint(">>> Make checking", "grey", "on_white")
-    make_check(spec.build_path, spec.runtest_flags, spec.tests, dry_run)
+    make_check(spec.build_path, spec.runtest_flags, spec.tests, spec.j, dry_run)
 
     cprint(">>> Copying results", "grey", "on_white")
     sum_file = os.path.join(spec.build_path, "gdb", "testsuite", "gdb.sum")
